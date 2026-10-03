@@ -8,7 +8,7 @@ function bookingScopeFragment(hotelId) {
     select 1
     from ${bookingRooms} br
     inner join ${rooms} r on r.id = br.room_id
-    where br.booking_id = ${bookings.id} and r.hotel_id = ${hotelId}
+    where br.booking_id = ${bookings.id} and r.hotel_id = ${hotelId}::uuid
   )`;
 }
 
