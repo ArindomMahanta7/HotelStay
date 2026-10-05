@@ -1,6 +1,6 @@
 import { eq, and, sql, asc, ilike, inArray } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { rooms, roomTypes } from "../db/schema/index.js";
+import { rooms, roomTypes, bookingRooms } from "../db/schema/index.js";
 import { ApiError } from "../utils/errors.js";
 import { getDefaultHotelId } from "../services/hotel.service.js";
 import { findAvailableRooms } from "../services/availability.service.js";
@@ -112,6 +112,15 @@ export async function createRoom(req, res) {
     .limit(1);
   if (!roomType) throw ApiError.notFound("Room type not found");
 
+  const [existingRoom] = await db
+    .select({ id: rooms.id })
+    .from(rooms)
+    .where(and(eq(rooms.hotelId, hotelId), eq(rooms.roomNumber, body.roomNumber)))
+    .limit(1);
+  if (existingRoom) {
+    throw ApiError.conflict(`Room number ${body.roomNumber} already exists in this hotel.`);
+  }
+
   const [room] = await db
     .insert(rooms)
     .values({
@@ -130,7 +139,7 @@ export async function createRoom(req, res) {
 export async function updateRoom(req, res) {
   const body = req.body;
   const [existing] = await db
-    .select({ id: rooms.id })
+    .select({ id: rooms.id, hotelId: rooms.hotelId, roomNumber: rooms.roomNumber })
     .from(rooms)
     .where(eq(rooms.id, req.params.id))
     .limit(1);
@@ -143,6 +152,17 @@ export async function updateRoom(req, res) {
       .where(eq(roomTypes.id, body.roomTypeId))
       .limit(1);
     if (!roomType) throw ApiError.notFound("Room type not found");
+  }
+
+  if (body.roomNumber !== undefined && body.roomNumber !== existing.roomNumber) {
+    const [duplicateRoom] = await db
+      .select({ id: rooms.id })
+      .from(rooms)
+      .where(and(eq(rooms.hotelId, existing.hotelId), eq(rooms.roomNumber, body.roomNumber)))
+      .limit(1);
+    if (duplicateRoom) {
+      throw ApiError.conflict(`Room number ${body.roomNumber} already exists in this hotel.`);
+    }
   }
 
   const updates = {};
@@ -162,6 +182,16 @@ export async function updateRoom(req, res) {
 }
 
 export async function deleteRoom(req, res) {
+  const [existingBooking] = await db
+    .select({ roomId: bookingRooms.roomId })
+    .from(bookingRooms)
+    .where(eq(bookingRooms.roomId, req.params.id))
+    .limit(1);
+
+  if (existingBooking) {
+    throw ApiError.conflict("Cannot delete room because it is associated with existing bookings.");
+  }
+
   const deleted = await db
     .delete(rooms)
     .where(eq(rooms.id, req.params.id))
@@ -182,6 +212,17 @@ export async function bulkCreateRooms(req, res) {
     .where(eq(roomTypes.id, body.roomTypeId))
     .limit(1);
   if (!roomType) throw ApiError.notFound("Room type not found");
+
+  const roomNumbers = body.rooms.map((r) => r.roomNumber);
+  const existingRooms = await db
+    .select({ roomNumber: rooms.roomNumber })
+    .from(rooms)
+    .where(and(eq(rooms.hotelId, hotelId), inArray(rooms.roomNumber, roomNumbers)));
+  
+  if (existingRooms.length > 0) {
+    const duplicates = existingRooms.map(r => r.roomNumber).join(", ");
+    throw ApiError.conflict(`The following room numbers already exist in this hotel: ${duplicates}`);
+  }
 
   const values = body.rooms.map((room) => ({
     hotelId,

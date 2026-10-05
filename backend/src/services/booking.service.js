@@ -33,7 +33,7 @@ async function lockRooms(tx, roomIds) {
            rt.capacity, rt.price_per_night, rt.name as type_name
     from rooms r
     inner join room_types rt on rt.id = r.room_type_id
-    where r.id = any(${roomIds}::uuid[])
+    where ${inArray(sql`r.id`, roomIds)}
     order by r.room_number
     for update of r
   `);
@@ -82,7 +82,7 @@ export function computeBill(booking, lines) {
       roomId: line.roomId ?? room.id,
       roomNumber: room.roomNumber,
       floor: room.floor,
-      roomType: line.roomType?.name ?? room.typeName ?? room.type_name,
+      roomType: line.roomType?.name ?? room.roomType?.name ?? room.typeName ?? room.type_name,
       rate,
       nights,
       subtotal: Number((rate * nights).toFixed(2)),
@@ -305,7 +305,7 @@ export async function createBooking({ user, input }) {
 
     await tx.execute(sql`
       update rooms set status = 'reserved', updated_at = now()
-      where id = any(${roomIds}::uuid[])
+      where ${inArray(rooms.id, roomIds)}
     `);
 
     return inserted.id;
@@ -492,7 +492,7 @@ export async function cancelBooking({ id, user }) {
     if (roomIds.length) {
       await tx.execute(sql`
         update rooms set status = 'available', updated_at = now()
-        where id = any(${roomIds}::uuid[]) and status = 'reserved'
+        where ${inArray(rooms.id, roomIds)} and status = 'reserved'
       `);
     }
 
@@ -523,7 +523,7 @@ export async function checkInBooking({ id }) {
     if (roomIds.length) {
       await tx.execute(sql`
         update rooms set status = 'occupied', updated_at = now()
-        where id = any(${roomIds}::uuid[]) and status in ('reserved', 'available')
+        where ${inArray(rooms.id, roomIds)} and status in ('reserved', 'available')
       `);
     }
 
@@ -573,7 +573,7 @@ export async function checkOutBooking({ id, payment }) {
     if (roomIds.length) {
       await tx.execute(sql`
         update rooms set status = 'cleaning', updated_at = now()
-        where id = any(${roomIds}::uuid[]) and status = 'occupied'
+        where ${inArray(rooms.id, roomIds)} and status = 'occupied'
       `);
     }
 

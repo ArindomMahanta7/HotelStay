@@ -82,7 +82,7 @@ export async function findConflictingBookings(
     from ${bookingRooms} br
     inner join ${bookings} b on b.id = br.booking_id
     inner join ${rooms} r on r.id = br.room_id
-    where br.room_id = any(${roomIds}::uuid[])
+    where ${inArray(sql`br.room_id`, roomIds)}
       and b.status in ('pending', 'confirmed', 'checked_in')
       and b.check_in < ${checkOut}::date
       and b.check_out > ${checkIn}::date
